@@ -1,52 +1,37 @@
-// Добавляем admin, чтобы генерировать токены
-const { admin, db } = require('../config/firebase'); 
+const { admin, db } = require('../config/firebase');
 const { setOtp, getOtp, deleteOtp } = require('../utils/otpStore');
 
 exports.sendCode = async (email) => {
     const cleanEmail = email.toLowerCase().trim();
-
     const userDoc = await db.collection('whitelist').doc(cleanEmail).get();
+    
     if (!userDoc.exists) {
-        throw new Error('Доступ запрещен');
+        throw new Error('Вас нет в списке доступа');
     }
 
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-
     setOtp(cleanEmail, code);
-
-    // ВЫВОДИМ КОД В ЛОГИ RAILWAY (Пока нет реальной почты - это ок)
-    console.log(`\n\n!!! КОД ДЛЯ ${cleanEmail}: ${code} !!!\n\n`);
-
+    console.log(`\n!!! КОД ДЛЯ ${cleanEmail}: ${code} !!!\n`);
     return true;
 };
 
-// Делаем функцию асинхронной (async), так как будем обращаться к базе и токенам
-exports.verifyCode = async (req, res) => {
-    try {
-        const { email, code } = req.body;
+exports.verifyCode = async (email, code) => {
+    const cleanEmail = email.toLowerCase().trim();
+    const stored = getOtp(cleanEmail);
 
-        if (!email || !code) {
-            return res.status(400).json({ success: false, error: 'Данные не переданы' });
+    console.log(`[Service] Сверяю: в памяти ${stored}, введено ${code}`);
+
+    if (stored && String(stored) === String(code)) {
+        try {
+            deleteOtp(cleanEmail);
+            console.log(`[Service] Код совпал. Генерирую токен...`);
+            const customToken = await admin.auth().createCustomToken(cleanEmail);
+            return { success: true, token: customToken };
+        } catch (error) {
+            console.error("[Service] Ошибка Firebase:", error.message);
+            return { success: false, error: "Ошибка Firebase токена" };
         }
-
-        // Вызываем сервис и ЖДЕМ его (await)
-        const result = await authService.verifyCode(email, code);
-
-        // ВНИМАНИЕ: Если сервис вернул result.success = true, 
-        // мы ОБЯЗАТЕЛЬНО отправляем это клиенту
-        if (result.success) {
-            return res.status(200).json({
-                success: true,
-                token: result.token
-            });
-        } else {
-            return res.status(400).json({
-                success: false,
-                error: result.error || 'Неверный код'
-            });
-        }
-    } catch (err) {
-        console.error('Ошибка в контроллере аутентификации:', err);
-        return res.status(500).json({ success: false, error: 'Сбой сервера' });
     }
+
+    return { success: false, error: "Неверный или просроченный код" };
 };
