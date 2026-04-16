@@ -4,6 +4,7 @@ exports.searchUsers = async (name) => {
     const snapshot = await db.collection('whitelist')
         .where('name', '>=', name)
         .where('name', '<=', name + '\uf8ff')
+        .limit(20) // БРОНЯ: Не отдаем больше 20 юзеров за раз (защита от парсинга всей базы)
         .get();
 
     return snapshot.docs.map(doc => ({
@@ -14,7 +15,7 @@ exports.searchUsers = async (name) => {
 
 exports.getChats = async (email) => {
     const snapshot = await db.collection('chats')
-        .where('participants', 'array-contains', email.toLowerCase())
+        .where('participants', 'array-contains', email.toLowerCase().trim())
         .get();
 
     return snapshot.docs.map(doc => ({
@@ -24,8 +25,11 @@ exports.getChats = async (email) => {
 };
 
 exports.createChat = async (participants) => {
-    const ref = await db.collection('chats').add({ participants });
-    return { id: ref.id, participants };
+    // БРОНЯ: Защита от дубликатов. Если хакер пришлет ["vasya", "vasya"], мы сделаем из этого уникальный список
+    const uniqueParticipants = Array.from(new Set(participants.map(p => p.toLowerCase().trim())));
+
+    const ref = await db.collection('chats').add({ participants: uniqueParticipants });
+    return { id: ref.id, participants: uniqueParticipants };
 };
 
 exports.getMessages = async (chatId, cursor) => {
@@ -64,16 +68,16 @@ exports.sendMessage = async (chatId, text, sender, replyTo, io) => {
     // 1. Создаем объект для Firebase
     const dbMsg = {
         text: String(text),
-        sender: String(sender),
+        sender: String(sender).toLowerCase().trim(), // БРОНЯ: Нормализуем email
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
     // Если replyTo пришел - берем из него только текст и отправителя
     if (replyTo && replyTo.text) {
         dbMsg.replyTo = {
-            id: String(replyTo.id || ''), // <--- ДОБАВЛЯЕМ ВОТ ЭТУ СТРОЧКУ
+            id: String(replyTo.id || ''), 
             text: String(replyTo.text),
-            sender: String(replyTo.sender)
+            sender: String(replyTo.sender).toLowerCase().trim()
         };
     }
 
@@ -89,7 +93,7 @@ exports.sendMessage = async (chatId, text, sender, replyTo, io) => {
         text: dbMsg.text,
         sender: dbMsg.sender,
         replyTo: dbMsg.replyTo || null,
-        createdAt: new Date().toISOString() // Для мгновенного отображения времени
+        createdAt: new Date().toISOString() 
     };
 
     io.to(chatId).emit('receive_message', socketMsg);

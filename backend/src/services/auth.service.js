@@ -1,4 +1,5 @@
-const { db } = require('../config/firebase');
+// Добавляем admin, чтобы генерировать токены
+const { admin, db } = require('../config/firebase'); 
 const { setOtp, getOtp, deleteOtp } = require('../utils/otpStore');
 
 exports.sendCode = async (email) => {
@@ -13,28 +14,49 @@ exports.sendCode = async (email) => {
 
     setOtp(cleanEmail, code);
 
-    // ВЫВОДИМ КОД В ЛОГИ RAILWAY (Вместо почты)
+    // ВЫВОДИМ КОД В ЛОГИ RAILWAY (Пока нет реальной почты - это ок)
     console.log(`\n\n!!! КОД ДЛЯ ${cleanEmail}: ${code} !!!\n\n`);
 
     return true;
 };
 
-exports.verifyCode = (email, code) => {
+// Делаем функцию асинхронной (async), так как будем обращаться к базе и токенам
+exports.verifyCode = async (email, code) => {
     const cleanEmail = email.toLowerCase().trim();
-
     const DEV_CODE = process.env.DEV_LOGIN_CODE;
 
-    // ✅ dev-вход
-    if (DEV_CODE && code === DEV_CODE) {
-        console.log(`🛠 DEV LOGIN для ${cleanEmail}`);
-        return { success: true, dev: true };
+    // 1. БРОНЯ: Обязательно проверяем вайтлист ДАЖЕ при вводе кода!
+    const userDoc = await db.collection('whitelist').doc(cleanEmail).get();
+    if (!userDoc.exists) {
+        return { success: false }; 
     }
 
-    const stored = getOtp(cleanEmail);
+    let isCodeValid = false;
 
-    if (stored && stored === code) {
-        deleteOtp(cleanEmail);
-        return { success: true };
+    // 2. Проверяем код
+    if (DEV_CODE && code === String(DEV_CODE)) {
+        console.log(`🛠 DEV LOGIN для ${cleanEmail}`);
+        isCodeValid = true;
+    } else {
+        const stored = getOtp(cleanEmail);
+        if (stored && stored === String(code)) {
+            isCodeValid = true;
+            deleteOtp(cleanEmail); // Удаляем использованный код
+        }
+    }
+
+    // 3. БРОНЯ СУПЕР-УРОВНЯ: Выдаем Firebase Token
+    if (isCodeValid) {
+        try {
+            // Создаем токен, где UID = email пользователя
+            const customToken = await admin.auth().createCustomToken(cleanEmail);
+            
+            // Возвращаем токен клиенту!
+            return { success: true, token: customToken };
+        } catch (error) {
+            console.error("Ошибка создания Firebase токена:", error);
+            return { success: false };
+        }
     }
 
     return { success: false };
