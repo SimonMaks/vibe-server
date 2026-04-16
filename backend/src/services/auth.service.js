@@ -25,39 +25,43 @@ exports.verifyCode = async (email, code) => {
     const cleanEmail = email.toLowerCase().trim();
     const DEV_CODE = process.env.DEV_LOGIN_CODE;
 
-    // 1. БРОНЯ: Обязательно проверяем вайтлист ДАЖЕ при вводе кода!
+    console.log(`--- Попытка входа для: ${cleanEmail} ---`);
+
     const userDoc = await db.collection('whitelist').doc(cleanEmail).get();
     if (!userDoc.exists) {
-        return { success: false }; 
+        console.log(`❌ Ошибка: Почты ${cleanEmail} нет в вайтлисте Firebase!`);
+        return { success: false, error: 'Доступ запрещен' }; 
     }
 
     let isCodeValid = false;
 
-    // 2. Проверяем код
     if (DEV_CODE && code === String(DEV_CODE)) {
-        console.log(`🛠 DEV LOGIN для ${cleanEmail}`);
+        console.log(`🛠 Использован DEV_CODE`);
         isCodeValid = true;
     } else {
         const stored = getOtp(cleanEmail);
-        if (stored && stored === String(code)) {
+        console.log(`Код в памяти: ${stored}, Введенный код: ${code}`);
+        
+        if (stored && String(stored) === String(code)) {
             isCodeValid = true;
-            deleteOtp(cleanEmail); // Удаляем использованный код
+            deleteOtp(cleanEmail);
         }
     }
 
-    // 3. БРОНЯ СУПЕР-УРОВНЯ: Выдаем Firebase Token
     if (isCodeValid) {
         try {
-            // Создаем токен, где UID = email пользователя
+            console.log(`✅ Код верный. Пытаюсь создать токен...`);
+            // Вот тут чаще всего затык:
             const customToken = await admin.auth().createCustomToken(cleanEmail);
-            
-            // Возвращаем токен клиенту!
+            console.log(`🚀 Токен успешно создан!`);
             return { success: true, token: customToken };
         } catch (error) {
-            console.error("Ошибка создания Firebase токена:", error);
-            return { success: false };
+            // ЭТА ОШИБКА ПОЯВИТСЯ В ЛОГАХ RAILWAY
+            console.error("❌ КРИТИЧЕСКАЯ ОШИБКА FIREBASE:", error.message);
+            return { success: false, error: 'Ошибка сервера при создании токена' };
         }
     }
 
-    return { success: false };
+    console.log(`❌ Код не совпал`);
+    return { success: false, error: 'Неверный код' };
 };
