@@ -21,47 +21,32 @@ exports.sendCode = async (email) => {
 };
 
 // Делаем функцию асинхронной (async), так как будем обращаться к базе и токенам
-exports.verifyCode = async (email, code) => {
-    const cleanEmail = email.toLowerCase().trim();
-    const DEV_CODE = process.env.DEV_LOGIN_CODE;
+exports.verifyCode = async (req, res) => {
+    try {
+        const { email, code } = req.body;
 
-    console.log(`--- Попытка входа для: ${cleanEmail} ---`);
-
-    const userDoc = await db.collection('whitelist').doc(cleanEmail).get();
-    if (!userDoc.exists) {
-        console.log(`❌ Ошибка: Почты ${cleanEmail} нет в вайтлисте Firebase!`);
-        return { success: false, error: 'Доступ запрещен' }; 
-    }
-
-    let isCodeValid = false;
-
-    if (DEV_CODE && code === String(DEV_CODE)) {
-        console.log(`🛠 Использован DEV_CODE`);
-        isCodeValid = true;
-    } else {
-        const stored = getOtp(cleanEmail);
-        console.log(`Код в памяти: ${stored}, Введенный код: ${code}`);
-        
-        if (stored && String(stored) === String(code)) {
-            isCodeValid = true;
-            deleteOtp(cleanEmail);
+        if (!email || !code) {
+            return res.status(400).json({ success: false, error: 'Данные не переданы' });
         }
-    }
 
-    if (isCodeValid) {
-        try {
-            console.log(`✅ Код верный. Пытаюсь создать токен...`);
-            // Вот тут чаще всего затык:
-            const customToken = await admin.auth().createCustomToken(cleanEmail);
-            console.log(`🚀 Токен успешно создан!`);
-            return { success: true, token: customToken };
-        } catch (error) {
-            // ЭТА ОШИБКА ПОЯВИТСЯ В ЛОГАХ RAILWAY
-            console.error("❌ КРИТИЧЕСКАЯ ОШИБКА FIREBASE:", error.message);
-            return { success: false, error: 'Ошибка сервера при создании токена' };
+        // Вызываем сервис и ЖДЕМ его (await)
+        const result = await authService.verifyCode(email, code);
+
+        // ВНИМАНИЕ: Если сервис вернул result.success = true, 
+        // мы ОБЯЗАТЕЛЬНО отправляем это клиенту
+        if (result.success) {
+            return res.status(200).json({
+                success: true,
+                token: result.token
+            });
+        } else {
+            return res.status(400).json({
+                success: false,
+                error: result.error || 'Неверный код'
+            });
         }
+    } catch (err) {
+        console.error('Ошибка в контроллере аутентификации:', err);
+        return res.status(500).json({ success: false, error: 'Сбой сервера' });
     }
-
-    console.log(`❌ Код не совпал`);
-    return { success: false, error: 'Неверный код' };
 };
