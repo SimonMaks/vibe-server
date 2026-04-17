@@ -72,11 +72,11 @@ exports.getMessages = async (req, res) => {
 exports.sendMessage = async (req, res) => {
     try {
         const io = getIO();
-        // 1. Извлекаем files из тела запроса
+        // 1. Извлекаем files из req.body
         const { text, sender, replyTo, files } = req.body; 
         const { chatId } = req.params;
 
-        // 2. БРОНЯ: Обновленная валидация (разрешаем отправку, если есть либо текст, либо файлы)
+        // 2. Обновляем валидацию: разрешаем отправку, если есть либо текст, либо файлы
         if (!chatId || (!text && !files) || !sender) {
             return res.status(400).json({ error: 'Не заполнены обязательные поля' });
         }
@@ -85,13 +85,13 @@ exports.sendMessage = async (req, res) => {
             return res.status(400).json({ error: 'Сообщение слишком длинное' });
         }
 
-        // 3. Передаем files пятым аргументом
+        // 3. Передаем files пятым аргументом в сервис
         await chatService.sendMessage(
             chatId,
             text ? text.trim() : "",
             sender,
             replyTo,
-            files, // <--- Важно!
+            files, 
             io
         );
 
