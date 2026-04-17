@@ -64,15 +64,17 @@ exports.getMessages = async (chatId, cursor) => {
     return messages.reverse();
 };
 
-exports.sendMessage = async (chatId, text, sender, replyTo, io) => {
+// Добавь files в список аргументов
+exports.sendMessage = async (chatId, text, sender, replyTo, files, io) => {
     // 1. Создаем объект для Firebase
     const dbMsg = {
         text: String(text),
-        sender: String(sender).toLowerCase().trim(), // БРОНЯ: Нормализуем email
+        sender: String(sender).toLowerCase().trim(),
+        // ДОБАВЛЕНО: Сохраняем файлы в базу
+        files: files || null, 
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
-    // Если replyTo пришел - берем из него только текст и отправителя
     if (replyTo && replyTo.text) {
         dbMsg.replyTo = {
             id: String(replyTo.id || ''), 
@@ -87,15 +89,21 @@ exports.sendMessage = async (chatId, text, sender, replyTo, io) => {
         .collection('messages')
         .add(dbMsg);
 
-    // 3. Сразу готовим ответ для сокета
+    // 3. Готовим ответ для сокета
     const socketMsg = {
         id: docRef.id,
         text: dbMsg.text,
         sender: dbMsg.sender,
+        // ДОБАВЛЕНО: Передаем файлы другим пользователям через сокет
+        files: dbMsg.files, 
         replyTo: dbMsg.replyTo || null,
         createdAt: new Date().toISOString() 
     };
 
-    io.to(chatId).emit('receive_message', socketMsg);
+    // ВНИМАНИЕ: Проверь название ивента! 
+    // В ChatArea.jsx у тебя socket.on('message'), а тут 'receive_message'.
+    // Измени на 'message', чтобы сообщения появлялись в реальном времени.
+    io.to(chatId).emit('message', socketMsg); 
+    
     return true;
 };
