@@ -1,109 +1,104 @@
-const { db, admin } = require('../config/firebase');
+const { Chat, Message, Whitelist } = require('../models');
+const { Op } = require('sequelize');
 
+// 1. ПОИСК ПОЛЬЗОВАТЕЛЕЙ
 exports.searchUsers = async (name) => {
-    const snapshot = await db.collection('whitelist')
-        .where('name', '>=', name)
-        .where('name', '<=', name + '\uf8ff')
-        .limit(20) // БРОНЯ: Не отдаем больше 20 юзеров за раз (защита от парсинга всей базы)
-        .get();
-
-    return snapshot.docs.map(doc => ({
-        email: doc.id,
-        name: doc.data().name
-    }));
-};
-
-exports.getChats = async (email) => {
-    const snapshot = await db.collection('chats')
-        .where('participants', 'array-contains', email.toLowerCase().trim())
-        .get();
-
-    return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-    }));
-};
-
-exports.createChat = async (participants) => {
-    // БРОНЯ: Защита от дубликатов. Если хакер пришлет ["vasya", "vasya"], мы сделаем из этого уникальный список
-    const uniqueParticipants = Array.from(new Set(participants.map(p => p.toLowerCase().trim())));
-
-    const ref = await db.collection('chats').add({ participants: uniqueParticipants });
-    return { id: ref.id, participants: uniqueParticipants };
-};
-
-exports.getMessages = async (chatId, cursor) => {
-    let query = db.collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .orderBy('createdAt', 'desc')
-        .limit(30);
-
-    if (cursor && cursor !== 'null') {
-        const cursorDoc = await db.collection('chats').doc(chatId).collection('messages').doc(cursor).get();
-        if (cursorDoc.exists) {
-            query = query.startAfter(cursorDoc);
-        }
-    }
-
-    const snapshot = await query.get();
-
-    const messages = snapshot.docs.map(doc => {
-        const data = doc.data();
-        let dateString = new Date().toISOString();
-
-        if (data.createdAt && data.createdAt.toDate) {
-            dateString = data.createdAt.toDate().toISOString();
-        } else if (typeof data.createdAt === 'string') {
-            dateString = data.createdAt;
-        }
-
-        return { id: doc.id, ...data, createdAt: dateString };
+    // Ищем в нашей локальной таблице Whitelist (по первым буквам)
+    const users = await Whitelist.findAll({
+        where: {
+            name: {
+                [Op.like]: `${name}%` // Ищет совпадения, начинающиеся с name
+            }
+        },
+        limit: 20 // БРОНЯ: Не отдаем больше 20 юзеров за раз
     });
 
-    return messages.reverse();
+    return users.map(u => ({
+        email: u.email,
+        name: u.name
+    }));
 };
 
-// 1. Добавляем files в список аргументов
-// Добавляем files в аргументы
-exports.sendMessage = async (chatId, text, sender, replyTo, files, io) => {
+// 2. ПОЛУЧЕНИЕ ЧАТОВ ПОЛЬЗОВАТЕЛЯ
+exports.getChats = async (email) => {
+    const normalizedEmail = email.toLowerCase().trim();
+    const chats = await Chat.findAll();
     
-    // ЛОГ ДЛЯ ПРОВЕРКИ: Дошли ли файлы до сервиса?
-    console.log("Files in Service:", files);
+    // В SQLite фильтровать JSON-массивы лучше на уровне JavaScript (надежнее)
+    return chats.filter(c => {
+        // Страховка: если SQLite вернул строку, парсим её в массив
+        const participants = typeof c.participants === 'string' 
+            ? JSON.parse(c.participants) 
+            : c.participants;
+            
+        return participants && participants.includes(normalizedEmail);
+    });
+};
 
-    const dbMsg = {
-        text: String(text || ""),
-        sender: String(sender).toLowerCase().trim(),
-        // 3. ЗАПИСЫВАЕМ массив файлов в объект Firestore
-        files: files || null, 
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
+// 3. СОЗДАНИЕ ЧАТА
+exports.createChat = async (participants) => {
+    const uniqueParticipants = Array.from(new Set(participants.map(p => p.toLowerCase().trim())));
+
+    // Создаем запись в базе
+    const newChat = await Chat.create({ 
+        participants: uniqueParticipants 
+    });
+    
+    return { id: newChat.id, participants: uniqueParticipants };
+};
+
+// 4. ЗАГРУЗКА ИСТОРИИ СООБЩЕНИЙ (с курсором/пагинацией)
+exports.getMessages = async (chatId, cursor) => {
+    let queryOptions = {
+        where: { chatId },
+        order: [['createdAt', 'DESC']], // Сначала новые
+        limit: 30
     };
 
-    if (replyTo && replyTo.text) {
-        dbMsg.replyTo = {
-            id: String(replyTo.id || ''), 
-            text: String(replyTo.text),
-            sender: String(replyTo.sender).toLowerCase().trim()
+    // Если передан курсор (ID последнего загруженного сообщения), грузим те, что были ДО него
+    if (cursor && cursor !== 'null') {
+        queryOptions.where.id = {
+            [Op.lt]: cursor 
         };
     }
 
-    // 4. Пишем в базу
-    const docRef = await db.collection('chats')
-        .doc(chatId)
-        .collection('messages')
-        .add(dbMsg);
+    const messages = await Message.findAll(queryOptions);
 
-    const socketMsg = {
-        id: docRef.id,
-        text: dbMsg.text,
-        sender: dbMsg.sender,
-        files: dbMsg.files, // Отправляем файлы в сокет
-        replyTo: dbMsg.replyTo || null,
-        createdAt: new Date().toISOString() 
-    };
+    // Форматируем данные для фронтенда
+    const formattedMessages = messages.map(msg => {
+        const plainMsg = msg.toJSON();
+        
+        // SQLite может хранить JSON как текст, превращаем обратно в объекты
+        if (typeof plainMsg.files === 'string') plainMsg.files = JSON.parse(plainMsg.files);
+        if (typeof plainMsg.replyTo === 'string') plainMsg.replyTo = JSON.parse(plainMsg.replyTo);
+        
+        return plainMsg;
+    });
 
-    // Слушаем 'message' на фронтенде
-    io.to(chatId).emit('message', socketMsg); 
+    // Разворачиваем, чтобы старые были сверху, новые снизу (как в мессенджерах)
+    return formattedMessages.reverse();
+};
+
+// 5. ОТПРАВКА СООБЩЕНИЯ
+exports.sendMessage = async (chatId, text, sender, replyTo, files, io) => {
+    // 1. Пишем в локальную базу данных
+    const newMessage = await Message.create({
+        chatId,
+        text: String(text || ""),
+        sender: String(sender).toLowerCase().trim(),
+        files: files || null,
+        replyTo: replyTo || null
+    });
+
+    // 2. Превращаем результат из формата базы в обычный объект
+    const socketMsg = newMessage.toJSON();
+
+    // Парсим JSON, если SQLite вернул их как строки
+    if (typeof socketMsg.files === 'string') socketMsg.files = JSON.parse(socketMsg.files);
+    if (typeof socketMsg.replyTo === 'string') socketMsg.replyTo = JSON.parse(socketMsg.replyTo);
+
+    // 3. Отправляем через сокеты в комнату (чат)
+    io.to(chatId).emit('message', socketMsg);
     
-    return true;
+    return socketMsg;
 };
