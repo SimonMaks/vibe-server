@@ -16,7 +16,7 @@ app.use(helmet());
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
