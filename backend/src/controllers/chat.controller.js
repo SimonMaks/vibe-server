@@ -72,32 +72,40 @@ exports.getMessages = async (req, res) => {
 exports.sendMessage = async (req, res) => {
     try {
         const io = getIO();
-        // 1. Достаем files из тела запроса
-        const { text, sender, replyTo, files } = req.body; 
+        const { text, sender } = req.body;
         const { chatId } = req.params;
-
-        // ЛОГ ДЛЯ ПРОВЕРКИ: Видит ли сервер файлы от фронтенда?
-        console.log("--- DEBUG SEND MESSAGE ---");
-        console.log("ChatId:", chatId);
-        console.log("Files received from frontend:", JSON.stringify(files, null, 2));
-
-        if (!chatId || (!text && !files) || !sender) {
-            return res.status(400).json({ error: 'Не заполнены обязательные поля' });
+        
+        // Multer превращает объекты (как replyTo) в строки, парсим обратно
+        let replyTo = null;
+        if (req.body.replyTo) {
+            replyTo = JSON.parse(req.body.replyTo);
         }
 
-        // 2. ПЕРЕДАЕМ files в сервис пятым аргументом
+        // Собираем инфу о загруженных файлах из req.files
+        const uploadedFiles = req.files ? req.files.map(file => ({
+            name: file.originalname,
+            size: file.size,
+            type: file.mimetype,
+            // Ссылка, по которой фронтенд сможет открыть картинку
+            url: `${process.env.API_URL || 'http://localhost:5000'}/uploads/${file.filename}` 
+        })) : null;
+
+        if (!chatId || (!text && (!uploadedFiles || uploadedFiles.length === 0)) || !sender) {
+            return res.status(400).json({ error: 'Пустое сообщение' });
+        }
+
         await chatService.sendMessage(
             chatId,
             text ? text.trim() : "",
             sender,
             replyTo,
-            files, 
+            uploadedFiles, // Передаем собранные файлы в сервис
             io
         );
 
         res.json({ success: true });
     } catch (err) {
-        console.error("[Chat Error - sendMessage]:", err.message);
-        res.status(500).json({ error: 'Не удалось отправить сообщение' });
+        console.error(err);
+        res.status(500).json({ error: 'Ошибка отправки' });
     }
 };

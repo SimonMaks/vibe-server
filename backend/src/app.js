@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const path = require('path');
 
 const authRoutes = require('./routes/auth.routes');
 const chatRoutes = require('./routes/chat.routes');
@@ -14,6 +15,8 @@ app.use(helmet());
 
 app.use(cors({ origin: '*' }));
 app.use(express.json());
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 минут
