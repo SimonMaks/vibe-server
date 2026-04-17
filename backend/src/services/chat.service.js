@@ -65,11 +65,16 @@ exports.getMessages = async (chatId, cursor) => {
 };
 
 // 1. Добавляем files в список аргументов
+// Добавляем files в аргументы
 exports.sendMessage = async (chatId, text, sender, replyTo, files, io) => {
-    // 2. Добавляем поле files в объект для базы данных
+    
+    // ЛОГ ДЛЯ ПРОВЕРКИ: Дошли ли файлы до сервиса?
+    console.log("Files in Service:", files);
+
     const dbMsg = {
         text: String(text || ""),
         sender: String(sender).toLowerCase().trim(),
+        // 3. ЗАПИСЫВАЕМ массив файлов в объект Firestore
         files: files || null, 
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     };
@@ -82,23 +87,22 @@ exports.sendMessage = async (chatId, text, sender, replyTo, files, io) => {
         };
     }
 
-    // 3. Сохраняем в Firestore
+    // 4. Пишем в базу
     const docRef = await db.collection('chats')
         .doc(chatId)
         .collection('messages')
         .add(dbMsg);
 
-    // 4. Включаем файлы в объект для Socket.io
     const socketMsg = {
         id: docRef.id,
         text: dbMsg.text,
         sender: dbMsg.sender,
-        files: dbMsg.files, 
+        files: dbMsg.files, // Отправляем файлы в сокет
         replyTo: dbMsg.replyTo || null,
         createdAt: new Date().toISOString() 
     };
 
-    // Отправляем событие 'message', которое слушает фронтенд
+    // Слушаем 'message' на фронтенде
     io.to(chatId).emit('message', socketMsg); 
     
     return true;

@@ -72,20 +72,20 @@ exports.getMessages = async (req, res) => {
 exports.sendMessage = async (req, res) => {
     try {
         const io = getIO();
-        // 1. Извлекаем files из req.body
+        // 1. Достаем files из тела запроса
         const { text, sender, replyTo, files } = req.body; 
         const { chatId } = req.params;
 
-        // 2. Обновляем валидацию: разрешаем отправку, если есть либо текст, либо файлы
+        // ЛОГ ДЛЯ ПРОВЕРКИ: Видит ли сервер файлы от фронтенда?
+        console.log("--- DEBUG SEND MESSAGE ---");
+        console.log("ChatId:", chatId);
+        console.log("Files received from frontend:", JSON.stringify(files, null, 2));
+
         if (!chatId || (!text && !files) || !sender) {
             return res.status(400).json({ error: 'Не заполнены обязательные поля' });
         }
 
-        if (text && text.length > 2000) {
-            return res.status(400).json({ error: 'Сообщение слишком длинное' });
-        }
-
-        // 3. Передаем files пятым аргументом в сервис
+        // 2. ПЕРЕДАЕМ files в сервис пятым аргументом
         await chatService.sendMessage(
             chatId,
             text ? text.trim() : "",
