@@ -64,17 +64,12 @@ exports.getMessages = async (chatId, cursor) => {
     return messages.reverse();
 };
 
-// Добавь files в список аргументов
-// controllers/chat.controller.js
-
-// Обнови аргументы функции, чтобы принимать files
 exports.sendMessage = async (chatId, text, sender, replyTo, files, io) => {
-    // 1. Создаем объект для Firebase
+    // 2. Формируем объект для базы
     const dbMsg = {
-        text: String(text),
+        text: String(text || ""),
         sender: String(sender).toLowerCase().trim(),
-        // ВАЖНО: Добавляем поле files, иначе в базе ничего не будет
-        files: files || null, 
+        files: files || null, // <--- Сохраняем массив файлов (URL, имя, размер)
         createdAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
@@ -86,23 +81,23 @@ exports.sendMessage = async (chatId, text, sender, replyTo, files, io) => {
         };
     }
 
-    // 2. Пишем в базу
+    // 3. Пишем в Firestore
     const docRef = await db.collection('chats')
         .doc(chatId)
         .collection('messages')
         .add(dbMsg);
 
-    // 3. Готовим ответ для сокета (включаем файлы)
+    // 4. Готовим объект для Socket.io
     const socketMsg = {
         id: docRef.id,
         text: dbMsg.text,
         sender: dbMsg.sender,
-        files: dbMsg.files, // Передаем файлы в реальном времени
+        files: dbMsg.files, // <--- Отправляем файлы в реальном времени
         replyTo: dbMsg.replyTo || null,
         createdAt: new Date().toISOString() 
     };
 
-    // ВАЖНО: На фронте ты слушаешь 'message', поэтому шлем 'message'
+    // На фронтенде ChatArea.jsx слушает событие 'message'
     io.to(chatId).emit('message', socketMsg); 
     
     return true;

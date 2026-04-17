@@ -72,24 +72,26 @@ exports.getMessages = async (req, res) => {
 exports.sendMessage = async (req, res) => {
     try {
         const io = getIO();
-        const { text, sender, replyTo } = req.body;
+        // 1. Извлекаем files из тела запроса
+        const { text, sender, replyTo, files } = req.body; 
         const { chatId } = req.params;
 
-        // БРОНЯ: Обязательные поля
-        if (!chatId || !text || !sender) {
+        // 2. БРОНЯ: Обновленная валидация (разрешаем отправку, если есть либо текст, либо файлы)
+        if (!chatId || (!text && !files) || !sender) {
             return res.status(400).json({ error: 'Не заполнены обязательные поля' });
         }
 
-        // БРОНЯ: Защита от спама и "тяжелых" запросов
-        if (typeof text !== 'string' || text.length > 2000) {
-            return res.status(400).json({ error: 'Сообщение слишком длинное или имеет неверный формат' });
+        if (text && text.length > 2000) {
+            return res.status(400).json({ error: 'Сообщение слишком длинное' });
         }
 
+        // 3. Передаем files пятым аргументом
         await chatService.sendMessage(
             chatId,
-            text.trim(),
+            text ? text.trim() : "",
             sender,
             replyTo,
+            files, // <--- Важно!
             io
         );
 
