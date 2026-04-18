@@ -1,36 +1,22 @@
 const { Server } = require('socket.io');
-const { admin } = require('../config/firebase'); // db убрали, admin оставили для токенов
-const { Chat } = require('../models'); // Подключаем модель чатов из SQLite
+const jwt = require('jsonwebtoken'); // ⚡ Подключили JWT
+const { Chat } = require('../models');
 
 let io;
 
 exports.initSocket = (server) => {
-    io = new Server(server, {
-        cors: {
-            origin: "*",
-            methods: ["GET", "POST"]
-        }
-    });
+    io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
 
-    // 1. БРОНЯ: Фейсконтроль при подключении к сокету (Middleware)
-    io.use(async (socket, next) => {
+    io.use((socket, next) => {
+        const token = socket.handshake.auth.token;
+        if (!token) return next(new Error('Authentication error: Нет токена'));
+
         try {
-            // Фронтенд должен присылать токен при подключении
-            const token = socket.handshake.auth.token;
-            
-            if (!token) {
-                return next(new Error('Authentication error: Нет токена'));
-            }
-
-            // Расшифровываем токен (Firebase Auth всё еще работает на страже)
-            const decodedToken = await admin.auth().verifyIdToken(token);
-            
-            // Записываем email прямо в объект сокета, чтобы знать, кто это
-            socket.user = { email: decodedToken.email || decodedToken.uid }; // На всякий случай берем email напрямую
-            
-            next(); // Пропускаем!
+            // ⚡ Проверяем токен нашим ключом
+            const decoded = jwt.verify(token, process.env.JWT_SECRET || 'vibe-super-secret-key-123');
+            socket.user = { email: decoded.email };
+            next();
         } catch (err) {
-            console.error('Ошибка авторизации сокета:', err.message);
             next(new Error('Authentication error: Неверный токен'));
         }
     });
