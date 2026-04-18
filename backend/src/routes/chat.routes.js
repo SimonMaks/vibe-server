@@ -2,6 +2,12 @@ const router = require('express').Router();
 const controller = require('../controllers/chat.controller');
 const rateLimit = require('express-rate-limit');
 const upload = require('../middlewares/upload');
+const auth = require('../middlewares/auth.middleware');
+
+router.get('/search', auth, controller.search);
+router.get('/chats', auth, controller.getChats);
+router.post('/chats', auth, controller.createChat);
+router.get('/messages/:chatId', auth, controller.getMessages);
 
 // 1. БРОНЯ: Лимит на поиск (чтобы хакеры не выкачали всю твою базу юзеров)
 const searchLimiter = rateLimit({
@@ -29,6 +35,6 @@ router.get('/search', searchLimiter, controller.search);
 router.get('/chats', controller.getChats); // Оставляем базовый лимит из server.js
 router.post('/chats', createChatLimiter, controller.createChat);
 router.get('/messages/:chatId', controller.getMessages);
-router.post('/messages/:chatId', messageLimiter, upload.array('files', 10), controller.sendMessage);
+router.post('/messages/:chatId', auth, upload.array('files', 10), controller.sendMessage);
 
 module.exports = router;

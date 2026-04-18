@@ -71,41 +71,31 @@ exports.getMessages = async (req, res) => {
 
 exports.sendMessage = async (req, res) => {
     try {
-        const io = getIO();
-        const { text, sender } = req.body;
         const { chatId } = req.params;
+        const { text, sender, replyTo } = req.body;
         
-        // Multer превращает объекты (как replyTo) в строки, парсим обратно
-        let replyTo = null;
-        if (req.body.replyTo) {
-            replyTo = JSON.parse(req.body.replyTo);
-        }
+        // Собираем ссылки на файлы
+        const files = req.files ? req.files.map(f => ({
+            name: f.originalname,
+            url: `${req.protocol}://${req.get('host')}/uploads/${f.filename}`,
+            size: f.size,
+            type: f.mimetype
+        })) : [];
 
-        // Собираем инфу о загруженных файлах из req.files
-        const uploadedFiles = req.files ? req.files.map(file => ({
-            name: file.originalname,
-            size: file.size,
-            type: file.mimetype,
-            // Ссылка, по которой фронтенд сможет открыть картинку
-            url: `${process.env.API_URL || 'http://localhost:5000'}/uploads/${file.filename}` 
-        })) : null;
-
-        if (!chatId || (!text && (!uploadedFiles || uploadedFiles.length === 0)) || !sender) {
-            return res.status(400).json({ error: 'Пустое сообщение' });
-        }
-
-        await chatService.sendMessage(
-            chatId,
-            text ? text.trim() : "",
-            sender,
-            replyTo,
-            uploadedFiles, // Передаем собранные файлы в сервис
+        const io = getIO(); // Берем объект сокетов
+        
+        const chatService = require('../services/chat.service');
+        const message = await chatService.sendMessage(
+            chatId, 
+            text, 
+            sender, 
+            replyTo ? JSON.parse(replyTo) : null, 
+            files, 
             io
         );
 
-        res.json({ success: true });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Ошибка отправки' });
+        res.status(200).json(message);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
     }
 };
