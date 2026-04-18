@@ -73,8 +73,10 @@ exports.sendMessage = async (req, res) => {
     try {
         const { chatId } = req.params;
         const { text, sender, replyTo } = req.body;
-        
-        // Собираем ссылки на файлы
+
+        console.log(`[API] Попытка отправки сообщения в чат ${chatId} от ${sender}`);
+
+        // Собираем файлы, если они есть
         const files = req.files ? req.files.map(f => ({
             name: f.originalname,
             url: `${req.protocol}://${req.get('host')}/uploads/${f.filename}`,
@@ -82,20 +84,26 @@ exports.sendMessage = async (req, res) => {
             type: f.mimetype
         })) : [];
 
-        const io = getIO(); // Берем объект сокетов
+        const io = getIO();
         
-        const chatService = require('../services/chat.service');
+        // Парсим replyTo, если это пришло как строка
+        let parsedReply = null;
+        if (replyTo && replyTo !== 'null' && replyTo !== 'undefined') {
+            parsedReply = typeof replyTo === 'string' ? JSON.parse(replyTo) : replyTo;
+        }
+
         const message = await chatService.sendMessage(
             chatId, 
             text, 
             sender, 
-            replyTo ? JSON.parse(replyTo) : null, 
+            parsedReply, 
             files, 
             io
         );
 
         res.status(200).json(message);
     } catch (error) {
+        console.error("🔥 ОШИБКА КОНТРОЛЛЕРА:", error.message);
         res.status(500).json({ error: error.message });
     }
 };
