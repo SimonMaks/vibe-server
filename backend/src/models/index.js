@@ -16,11 +16,17 @@ const Message = sequelize.define('Message', {
   createdAt: { type: DataTypes.DATE, defaultValue: DataTypes.NOW }
 });
 
-// 3. Таблица Пользователей (чтобы работал поиск контактов)
+// 3. Таблица Пользователей
 const Whitelist = sequelize.define('Whitelist', {
     email: { type: DataTypes.STRING, unique: true },
     name: { type: DataTypes.STRING }
 });
 
-// Экспортируем модели, чтобы другие файлы (например, chat.service.js) могли ими пользоваться
+// ⚡ СВЯЗИ ТАБЛИЦ (Associations) ⚡
+// Говорим базе, что у одного Чата может быть много Сообщений
+Chat.hasMany(Message, { foreignKey: 'chatId', as: 'messages' });
+// И что каждое Сообщение принадлежит конкретному Чату
+Message.belongsTo(Chat, { foreignKey: 'chatId' });
+
+// Экспортируем модели
 module.exports = { Chat, Message, Whitelist };

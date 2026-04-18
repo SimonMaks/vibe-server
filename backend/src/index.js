@@ -1,8 +1,8 @@
 const http = require('http');
-const app = require('./app'); // Твой express-файл
+const app = require('./app'); 
 const { initSocket } = require('./sockets/socket');
-const sequelize = require('./config/db'); // Исправлен путь (убрали ../)
-require('./models'); // Просто импортируем модели, чтобы Sequelize узнал о них до синхронизации
+const sequelize = require('./config/db'); 
+require('./models'); 
 
 // 1. БРОНЯ: Ловим фатальные ошибки
 process.on('uncaughtException', (err) => {
@@ -22,25 +22,16 @@ const PORT = process.env.PORT || 3000;
 
 // ⚡ ПОДКЛЮЧАЕМ БАЗУ И ТОЛЬКО ПОТОМ ЗАПУСКАЕМ СЕРВЕР ⚡
 sequelize.sync()
-    .then(async () => {
+    .then(() => {
         console.log('📦 База данных SQLite успешно инициализирована!');
         
-        // --- ВРЕМЕННЫЙ КОД ДЛЯ ТЕСТА (потом удалишь) ---
-        const { Whitelist } = require('./models');
-        await Whitelist.findOrCreate({ 
-            where: { email: 'test1@gmail.com' }, 
-            defaults: { name: 'Иван Тестовый' } 
-        });
-        await Whitelist.findOrCreate({ 
-            where: { email: 'test2@gmail.com' }, 
-            defaults: { name: 'Анна Проверка' } 
-        });
-        // ----------------------------------------------
-
         server.listen(PORT, '0.0.0.0', () => {
             console.log(`🚀 Сервер Vibe Messenger успешно запущен на порту ${PORT}`);
         });
     })
+    .catch((err) => {
+        console.error('❌ Ошибка при инициализации базы данных:', err);
+    }); // <-- Вернули отлов ошибок!
 
 // 2. БРОНЯ: Мягкое отключение
 process.on('SIGTERM', () => {
