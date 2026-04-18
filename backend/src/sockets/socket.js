@@ -42,14 +42,18 @@ exports.initSocket = (server) => {
                 const cleanEmail = socket.user.email.toLowerCase().trim();
 
                 // Если юзера нет в списке участников — выгоняем
-                if (!participants || !participants.includes(cleanEmail)) {
-                    console.log(`🚨 ПОПЫТКА ПРОСЛУШКИ! ${cleanEmail} ломится в чужой чат: ${chatId}`);
-                    return socket.emit('error', { message: 'У вас нет доступа к этому чату' });
-                }
+                if (participants.includes(cleanEmail)) {
+                // ⚡ ГАРАНТИРУЕМ, ЧТО ID - ЭТО СТРОКА
+                const roomName = String(chatId);
+            
+                // Сначала выходим из всех старых комнат (чтобы не слушать чужое)
+                socket.rooms.forEach(room => {
+                    if(room !== socket.id) socket.leave(room);
+                });
 
-                // Если всё ок - пускаем в комнату
-                socket.join(chatId.toString()); // Переводим ID в строку для надежности
-                console.log(`👤 ${cleanEmail} успешно зашел в комнату: ${chatId}`);
+                socket.join(roomName);
+                console.log(`👤 ${cleanEmail} зашел в комнату: ${roomName}`);
+                }
             } catch (error) {
                 console.error('Ошибка при проверке доступа к комнате:', error.message);
             }

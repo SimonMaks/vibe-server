@@ -106,7 +106,7 @@ exports.sendMessage = async (chatId, text, sender, replyTo, files, io) => {
     if (typeof socketMsg.replyTo === 'string') socketMsg.replyTo = JSON.parse(socketMsg.replyTo);
 
     // 3. Отправляем через сокеты в комнату (чат)
-    io.to(chatId).emit('message', socketMsg);
+    io.to(String(chatId)).emit('message', socketMsg);
     
     return socketMsg;
 };
