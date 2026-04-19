@@ -1,6 +1,7 @@
 const { Server } = require('socket.io');
-const jwt = require('jsonwebtoken'); // ⚡ Подключили JWT
+const jwt = require('jsonwebtoken');
 const { Chat } = require('../models');
+const { Op } = require('sequelize');
 
 let io;
 
@@ -9,53 +10,57 @@ exports.initSocket = (server) => {
 
     io.use((socket, next) => {
         const token = socket.handshake.auth.token;
-        if (!token) return next(new Error('Authentication error: Нет токена'));
+        if (!token) return next(new Error('Authentication error'));
 
         try {
-            // ⚡ Проверяем токен нашим ключом
             const decoded = jwt.verify(token, process.env.JWT_SECRET || 'vibe-super-secret-key-123');
-            socket.user = { email: decoded.email };
+            socket.user = { email: decoded.email.toLowerCase().trim() };
             next();
         } catch (err) {
-            next(new Error('Authentication error: Неверный токен'));
+            next(new Error('Authentication error'));
         }
     });
 
-    io.on('connection', (socket) => {
-        console.log(`🔌 Новый клиент подключен: ${socket.user.email} (ID: ${socket.id})`);
+    io.on('connection', async (socket) => {
+        const userEmail = socket.user.email;
+        console.log(`🔌 Подключен: ${userEmail}`);
+
+        // ⚡ ИСПРАВЛЕНИЕ 2: При подключении сразу добавляем пользователя во все его комнаты.
+        // Это нужно, чтобы он получал уведомления/сообщения из всех своих чатов сразу.
+        try {
+            const userChats = await Chat.findAll({
+                where: {
+                    participants: { [Op.like]: `%${userEmail}%` }
+                }
+            });
+            userChats.forEach(chat => {
+                socket.join(String(chat.id));
+            });
+            console.log(`✅ ${userEmail} вошел в ${userChats.length} комнат`);
+        } catch (err) {
+            console.error('Ошибка при авто-входе в комнаты:', err.message);
+        }
 
         socket.on('join_chat', async (chatId) => {
             try {
-                const id = parseInt(chatId); // ⚡ Всегда приводим к числу для findByPk
+                const id = parseInt(chatId);
                 const chat = await Chat.findByPk(id);
-        
-                if (!chat) {
-                    console.log(`❌ Чат ${id} не найден`);
-                    return;
-                }
+                if (!chat) return;
 
-                let p = chat.participants;
-                if (typeof p === 'string') p = JSON.parse(p);
+                let p = typeof chat.participants === 'string' ? JSON.parse(chat.participants) : chat.participants;
 
-                const cleanEmail = socket.user.email.toLowerCase().trim();
-
-                if (p.includes(cleanEmail)) {
-                    const roomName = String(id);
-                    // Выходим из других комнат
-                    socket.rooms.forEach(room => { if(room !== socket.id) socket.leave(room); });
-            
-                    socket.join(roomName);
-                    console.log(`✅ ${cleanEmail} вошел в комнату: ${roomName}`);
-                } else {
-                    console.log(`🚫 Доступ запрещен для ${cleanEmail} в чат ${id}`);
+                if (p.includes(userEmail)) {
+                    // ⚡ ИСПРАВЛЕНИЕ 3: УБРАЛИ socket.leave(room). 
+                    // Пользователь должен находиться во всех своих комнатах одновременно.
+                    socket.join(String(id));
                 }
             } catch (error) {
-                console.error('Ошибка сокета:', error.message);
+                console.error('Ошибка join_chat:', error.message);
             }
         });
 
         socket.on('disconnect', () => {
-            console.log(`❌ Клиент отключился: ${socket.user.email}`);
+            console.log(`❌ Отключился: ${userEmail}`);
         });
     });
 };

@@ -99,14 +99,19 @@ exports.sendMessage = async (chatId, text, sender, replyTo, files, io) => {
         replyTo: replyTo || null
     });
 
-    // 2. Превращаем результат из формата базы в обычный объект
+    // ⚡ ИСПРАВЛЕНИЕ 1: Обновляем updatedAt в таблице Chat, 
+    // чтобы этот чат поднялся наверх в списке (getChats использует updatedAt)
+    await Chat.update(
+        { updatedAt: new Date() }, 
+        { where: { id: chatId } }
+    );
+
     const socketMsg = newMessage.toJSON();
 
-    // Парсим JSON, если SQLite вернул их как строки
     if (typeof socketMsg.files === 'string') socketMsg.files = JSON.parse(socketMsg.files);
     if (typeof socketMsg.replyTo === 'string') socketMsg.replyTo = JSON.parse(socketMsg.replyTo);
 
-    // 3. Отправляем через сокеты в комнату (чат)
+    // 3. Отправляем через сокеты
     io.to(String(chatId)).emit('message', socketMsg);
     
     return socketMsg;
