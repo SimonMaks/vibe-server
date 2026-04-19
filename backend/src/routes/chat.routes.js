@@ -8,6 +8,7 @@ router.get('/search', auth, controller.search);
 router.get('/chats', auth, controller.getChats);
 router.post('/chats', auth, controller.createChat);
 router.get('/messages/:chatId', auth, controller.getMessages);
+router.post('/messages/:chatId', auth, upload.array('files', 10), controller.sendMessage);
 
 // 1. БРОНЯ: Лимит на поиск (чтобы хакеры не выкачали всю твою базу юзеров)
 const searchLimiter = rateLimit({
@@ -29,11 +30,5 @@ const messageLimiter = rateLimit({
     max: 60, // максимум 60 сообщений в минуту (1 в секунду)
     message: { error: "Вы отправляете сообщения слишком быстро!" }
 });
-
-// Подключаем контроллеры сквозь фильтры
-router.get('/search', searchLimiter, controller.search);
-router.post('/chats', createChatLimiter, controller.createChat);
-router.get('/messages/:chatId', controller.getMessages);
-router.post('/messages/:chatId', auth, upload.array('files', 10), controller.sendMessage);
 
 module.exports = router;
