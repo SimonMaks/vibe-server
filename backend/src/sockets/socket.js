@@ -26,36 +26,31 @@ exports.initSocket = (server) => {
 
         socket.on('join_chat', async (chatId) => {
             try {
-                // 2. БРОНЯ СУПЕР-УРОВНЯ: Ищем чат в нашей локальной SQLite базе
-                const chat = await Chat.findByPk(chatId); // findByPk ищет по ID (Primary Key)
-                
+                const id = parseInt(chatId); // ⚡ Всегда приводим к числу для findByPk
+                const chat = await Chat.findByPk(id);
+        
                 if (!chat) {
-                    return socket.emit('error', { message: 'Чат не найден' });
+                    console.log(`❌ Чат ${id} не найден`);
+                    return;
                 }
 
-                // SQLite может вернуть JSON как строку, парсим если нужно
-                let participants = chat.participants;
-                if (typeof participants === 'string') {
-                    participants = JSON.parse(participants);
-                }
+                let p = chat.participants;
+                if (typeof p === 'string') p = JSON.parse(p);
 
                 const cleanEmail = socket.user.email.toLowerCase().trim();
 
-                // Если юзера нет в списке участников — выгоняем
-                if (participants.includes(cleanEmail)) {
-                // ⚡ ГАРАНТИРУЕМ, ЧТО ID - ЭТО СТРОКА
-                const roomName = String(chatId);
+                if (p.includes(cleanEmail)) {
+                    const roomName = String(id);
+                    // Выходим из других комнат
+                    socket.rooms.forEach(room => { if(room !== socket.id) socket.leave(room); });
             
-                // Сначала выходим из всех старых комнат (чтобы не слушать чужое)
-                socket.rooms.forEach(room => {
-                    if(room !== socket.id) socket.leave(room);
-                });
-
-                socket.join(roomName);
-                console.log(`👤 ${cleanEmail} зашел в комнату: ${roomName}`);
+                    socket.join(roomName);
+                    console.log(`✅ ${cleanEmail} вошел в комнату: ${roomName}`);
+                } else {
+                    console.log(`🚫 Доступ запрещен для ${cleanEmail} в чат ${id}`);
                 }
             } catch (error) {
-                console.error('Ошибка при проверке доступа к комнате:', error.message);
+                console.error('Ошибка сокета:', error.message);
             }
         });
 

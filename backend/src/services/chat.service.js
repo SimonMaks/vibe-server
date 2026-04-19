@@ -21,23 +21,24 @@ exports.searchUsers = async (name) => {
 
 // 2. ПОЛУЧЕНИЕ ЧАТОВ ПОЛЬЗОВАТЕЛЯ (Оптимизировано!)
 exports.getChats = async (email) => {
+    if (!email) return []; // Броня от пустых запросов
     const normalizedEmail = email.toLowerCase().trim();
     
-    // Заставляем саму базу данных искать email внутри JSON-строки.
-    // Это работает в 100 раз быстрее и не забивает оперативную память!
     const chats = await Chat.findAll({
         where: {
             participants: {
-                [Op.like]: `%"${normalizedEmail}"%` // Ищем точное совпадение почты в кавычках
+                // Ищем email просто как подстроку. Для SQLite JSON это надежнее.
+                [Op.like]: `%${normalizedEmail}%` 
             }
-        }
+        },
+        order: [['updatedAt', 'DESC']] // Чтобы последние чаты были сверху
     });
     
-    // Парсим результаты для фронтенда
     return chats.map(c => {
         const plainChat = c.toJSON();
+        // Принудительно парсим участников, если база вернула строку
         if (typeof plainChat.participants === 'string') {
-            plainChat.participants = JSON.parse(plainChat.participants);
+            try { plainChat.participants = JSON.parse(plainChat.participants); } catch(e) { plainChat.participants = []; }
         }
         return plainChat;
     });

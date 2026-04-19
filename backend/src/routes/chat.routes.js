@@ -32,7 +32,6 @@ const messageLimiter = rateLimit({
 
 // Подключаем контроллеры сквозь фильтры
 router.get('/search', searchLimiter, controller.search);
-router.get('/chats', controller.getChats); // Оставляем базовый лимит из server.js
 router.post('/chats', createChatLimiter, controller.createChat);
 router.get('/messages/:chatId', controller.getMessages);
 router.post('/messages/:chatId', auth, upload.array('files', 10), controller.sendMessage);
